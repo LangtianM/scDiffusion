@@ -1,6 +1,5 @@
-cd VAE
 echo "Training Autoencoder, this might take a long time"
-python VAE_train.py --data_dir '/stor/lep/diffusion/multiome/openproblems_RNA_new.h5ad' --num_genes 13431 --save_dir '../output/checkpoint/AE/open_problem' --max_steps 200000
+python VAE/VAE_train.py --data_dir 'data/tabula_muris/all.h5ad' --num_genes 18996 --save_dir 'output/checkpoint/AE/my_VAE' --max_steps 3000 --state_dict 'data/annotation_model_v1' --max_minutes 180
 echo "Training Autoencoder done"
 
 cd ..
