@@ -480,7 +480,6 @@ class GaussianDiffusion:
         :return: a non-differentiable batch of samples.
         """
         final = None
-        traj = []
         for i, sample in enumerate(self.p_sample_loop_progressive(
             model,
             shape,
@@ -498,7 +497,9 @@ class GaussianDiffusion:
             final = sample
             if i%200==0:
                 print('step ',i)
-        return final["sample"], traj
+                import gc
+                gc.collect()
+        return final["sample"], []
 
     def p_sample_loop_progressive(
         self,
@@ -898,10 +899,19 @@ class GaussianDiffusion:
                     clip_denoised=clip_denoised,
                     model_kwargs=model_kwargs,
                 )
-            vb.append(out["output"])
-            xstart_mse.append(mean_flat((out["pred_xstart"] - x_start) ** 2))
+            # 分离张量以减少内存占用
+            vb.append(out["output"].detach())
+            xstart_mse.append(mean_flat((out["pred_xstart"] - x_start) ** 2).detach())
             eps = self._predict_eps_from_xstart(x_t, t_batch, out["pred_xstart"])
-            mse.append(mean_flat((eps - noise) ** 2))
+            mse.append(mean_flat((eps - noise) ** 2).detach())
+            
+            # 清理临时变量
+            del t_batch, noise, x_t, out, eps
+            
+            # 每100步进行一次垃圾回收
+            if t % 100 == 0:
+                import gc
+                gc.collect()
 
         vb = th.stack(vb, dim=1)
         xstart_mse = th.stack(xstart_mse, dim=1)

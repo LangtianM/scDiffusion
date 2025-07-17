@@ -76,14 +76,19 @@ class Cell_Unet(nn.Module):
         history = []  
         for layer in self.layers:  
             x = layer(x, emb)  
-            history.append(x)  
+            history.append(x)
         
         history.pop()
   
         # Reverse pass with skip connections  
         for layer in self.reverse_layers:  
             x = layer(x, emb)  
-            x = x + history.pop()  # Skip connection  
+            if history:  # 确保历史列表不为空
+                skip_connection = history.pop()  # Skip connection
+                x = x + skip_connection
+                del skip_connection
+  
+        del history
   
         x = self.out1(x)  
         x = self.norm_out(x)

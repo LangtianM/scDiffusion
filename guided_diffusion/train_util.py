@@ -153,6 +153,16 @@ class TrainLoop:
             self._update_ema()
         self._anneal_lr()
         self.log_step()
+        
+        # 每1000步进行内存清理，防止内存泄漏
+        if (self.step + self.resume_step) % 1000 == 0:
+            import gc
+            import torch as th
+            # 清理PyTorch缓存
+            if th.cuda.is_available():
+                th.cuda.empty_cache()
+            # 强制垃圾回收
+            gc.collect()
 
     def forward_backward(self, batch, cond):
         self.mp_trainer.zero_grad()
@@ -271,10 +281,16 @@ def find_ema_checkpoint(main_checkpoint, step, rate):
 
 def log_loss_dict(diffusion, ts, losses):
     for key, values in losses.items():
-        logger.logkv(key, values.mean().item())
+        # 确保立即释放张量内存
+        mean_val = values.mean().item()
+        logger.logkv(key, mean_val)
         # logger.logkv_mean(key, values.mean().item())
         # Log the quantiles (four quartiles, in particular).
-        for sub_t, sub_loss in zip(ts.cpu().numpy(), values.detach().cpu().numpy()):
+        ts_cpu = ts.cpu().numpy()
+        values_cpu = values.detach().cpu().numpy()
+        for sub_t, sub_loss in zip(ts_cpu, values_cpu):
             quartile = int(4 * sub_t / diffusion.num_timesteps)
             logger.logkv(f"{key}_q{quartile}", sub_loss)
             # logger.logkv_mean(f"{key}_q{quartile}", sub_loss)
+        # 清理临时变量
+        del ts_cpu, values_cpu, mean_val

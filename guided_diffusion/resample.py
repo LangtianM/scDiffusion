@@ -127,13 +127,13 @@ class LossSecondMomentResampler(LossAwareSampler):
         self.history_per_term = history_per_term
         self.uniform_prob = uniform_prob
         self._loss_history = np.zeros(
-            [diffusion.num_timesteps, history_per_term], dtype=np.float64
+            [diffusion.num_timesteps, history_per_term], dtype=np.float32
         )
-        self._loss_counts = np.zeros([diffusion.num_timesteps], dtype=np.int)
+        self._loss_counts = np.zeros([diffusion.num_timesteps], dtype=np.int32)
 
     def weights(self):
         if not self._warmed_up():
-            return np.ones([self.diffusion.num_timesteps], dtype=np.float64)
+            return np.ones([self.diffusion.num_timesteps], dtype=np.float32)
         weights = np.sqrt(np.mean(self._loss_history ** 2, axis=-1))
         weights /= np.sum(weights)
         weights *= 1 - self.uniform_prob
@@ -142,6 +142,7 @@ class LossSecondMomentResampler(LossAwareSampler):
 
     def update_with_all_losses(self, ts, losses):
         for t, loss in zip(ts, losses):
+            loss = float(loss) if not isinstance(loss, float) else loss
             if self._loss_counts[t] == self.history_per_term:
                 # Shift out the oldest loss term.
                 self._loss_history[t, :-1] = self._loss_history[t, 1:]
