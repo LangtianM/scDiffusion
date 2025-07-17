@@ -129,8 +129,8 @@ class GaussianDiffusion:
         self.loss_type = loss_type
         self.rescale_timesteps = rescale_timesteps
 
-        # Use float64 for accuracy.
-        betas = np.array(betas, dtype=np.float64)
+        # Convert betas to float32 at initialization
+        betas = np.array(betas, dtype=np.float32)
         self.betas = betas
         assert len(betas.shape) == 1, "betas must be 1-D"
         assert (betas > 0).all() and (betas <= 1).all()
@@ -293,6 +293,9 @@ class GaussianDiffusion:
             model_log_variance = _extract_into_tensor(model_log_variance, t, x.shape)
 
         def process_xstart(x):
+            """
+            Process the x_start prediction.
+            """
             if denoised_fn is not None:
                 x = denoised_fn(x)
             if clip_denoised:
@@ -776,8 +779,7 @@ class GaussianDiffusion:
         if model_kwargs is None:
             model_kwargs = {}
         if noise is None:
-            noise = th.randn_like(x_start,dtype=th.float64)#*(0.5**0.5)
-            # noise = np.random.negative_binomial(r, p, x_start.size())
+            noise = th.randn_like(x_start, dtype=th.float32)  # Changed from float64 to float32
         x_t = self.q_sample(x_start, t, noise=noise)
 
         terms = {}
@@ -926,7 +928,9 @@ def _extract_into_tensor(arr, timesteps, broadcast_shape):
                             dimension equal to the length of timesteps.
     :return: a tensor of shape [batch_size, 1, ...] where the shape has K dims.
     """
-    res = th.from_numpy(arr).to(device=timesteps.device)[timesteps].float()
+    # Convert numpy array to float32 before creating tensor
+    arr = arr.astype(np.float32)
+    res = th.from_numpy(arr).to(device=timesteps.device)[timesteps]
     while len(res.shape) < len(broadcast_shape):
         res = res[..., None]
     return res.expand(broadcast_shape)

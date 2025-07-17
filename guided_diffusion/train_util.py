@@ -47,11 +47,7 @@ class TrainLoop:
         self.batch_size = batch_size
         self.microbatch = microbatch if microbatch > 0 else batch_size
         self.lr = lr
-        self.ema_rate = (
-            [ema_rate]
-            if isinstance(ema_rate, float)
-            else [float(x) for x in ema_rate.split(",")]
-        )
+        self.ema_rate = [float(x) for x in ema_rate.split(",")]
         self.log_interval = log_interval
         self.save_interval = save_interval
         self.resume_checkpoint = resume_checkpoint
@@ -63,9 +59,7 @@ class TrainLoop:
 
         self.step = 0
         self.resume_step = 0
-        self.global_batch = self.batch_size * dist.get_world_size()
-
-        self.sync_cuda = th.cuda.is_available()
+        self.global_batch = self.batch_size
 
         self._load_and_sync_parameters()
         self.mp_trainer = MixedPrecisionTrainer(
@@ -79,8 +73,6 @@ class TrainLoop:
         )
         if self.resume_step:
             self._load_optimizer_state()
-            # Model was resumed, either due to a restart or a checkpoint
-            # being specified at the command line.
             self.ema_params = [
                 self._load_ema_parameters(rate) for rate in self.ema_rate
             ]
@@ -90,25 +82,11 @@ class TrainLoop:
                 for _ in range(len(self.ema_rate))
             ]
 
-        if th.cuda.is_available():
-            self.use_ddp = True
-            self.ddp_model = DDP(
-                self.model,
-                device_ids=[dist_util.dev()],
-                output_device=dist_util.dev(),
-                broadcast_buffers=False,
-                bucket_cap_mb=128,
-                find_unused_parameters=False,
-            )
-        else:
-            if dist.get_world_size() > 1:
-                logger.warn(
-                    "Distributed training requires CUDA. "
-                    "Gradients will not be synchronized properly!"
-                )
-            self.use_ddp = False
-            self.ddp_model = self.model
-        self.timestamp = model_name #time.strftime("%m-%d-%H:%M",time.gmtime())
+        # Single device training
+        self.use_ddp = False
+        self.ddp_model = self.model
+        
+        self.timestamp = model_name
         self.save_dir = save_dir
 
     def _load_and_sync_parameters(self):
@@ -116,15 +94,12 @@ class TrainLoop:
 
         if resume_checkpoint:
             self.resume_step = parse_resume_step_from_filename(resume_checkpoint)
-            if dist.get_rank() == 0:
-                logger.log(f"loading model from checkpoint: {resume_checkpoint}...")
-                self.model.load_state_dict(
-                    dist_util.load_state_dict(
-                        resume_checkpoint, map_location=dist_util.dev()
-                    )
+            logger.log(f"loading model from checkpoint: {resume_checkpoint}...")
+            self.model.load_state_dict(
+                dist_util.load_state_dict(
+                    resume_checkpoint, map_location=dist_util.dev()
                 )
-
-        dist_util.sync_params(self.model.parameters())
+            )
 
     def _load_ema_parameters(self, rate):
         ema_params = copy.deepcopy(self.mp_trainer.master_params)
@@ -132,14 +107,12 @@ class TrainLoop:
         main_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
         ema_checkpoint = find_ema_checkpoint(main_checkpoint, self.resume_step, rate)
         if ema_checkpoint:
-            if dist.get_rank() == 0:
-                logger.log(f"loading EMA from checkpoint: {ema_checkpoint}...")
-                state_dict = dist_util.load_state_dict(
-                    ema_checkpoint, map_location=dist_util.dev()
-                )
-                ema_params = self.mp_trainer.state_dict_to_master_params(state_dict)
+            logger.log(f"loading EMA from checkpoint: {ema_checkpoint}...")
+            state_dict = dist_util.load_state_dict(
+                ema_checkpoint, map_location=dist_util.dev()
+            )
+            ema_params = self.mp_trainer.state_dict_to_master_params(state_dict)
 
-        dist_util.sync_params(ema_params)
         return ema_params
 
     def _load_optimizer_state(self):
@@ -236,28 +209,27 @@ class TrainLoop:
     def save(self):
         def save_checkpoint(rate, params):
             state_dict = self.mp_trainer.master_params_to_state_dict(params)
-            if dist.get_rank() == 0:
-                logger.log(f"saving model {rate}...")
-                if not rate:
-                    filename = f"model{(self.step+self.resume_step):06d}.pt"
-                else:
-                    filename = f"ema_{rate}_{(self.step+self.resume_step):06d}.pt"
-                with bf.BlobFile(bf.join(self.save_dir, self.timestamp, filename), "wb") as f:
-                    th.save(state_dict, f)
-        if not os.path.exists(os.path.join(self.save_dir, self.timestamp)):
-            os.mkdir(os.path.join(self.save_dir, self.timestamp))
+            logger.log(f"saving model {rate}...")
+            if not rate:
+                filename = f"model{(self.step+self.resume_step):06d}.pt"
+            else:
+                filename = f"ema_{rate}_{(self.step+self.resume_step):06d}.pt"
+            save_path = os.path.join(self.save_dir, self.timestamp)
+            os.makedirs(save_path, exist_ok=True)  # Create full path if it doesn't exist
+            with bf.BlobFile(bf.join(save_path, filename), "wb") as f:
+                th.save(state_dict, f)
+
         save_checkpoint(0, self.mp_trainer.master_params)
         for rate, params in zip(self.ema_rate, self.ema_params):
             save_checkpoint(rate, params)
 
-        if dist.get_rank() == 0:
-            with bf.BlobFile(
-                bf.join(self.save_dir, self.timestamp, f"opt{(self.step+self.resume_step):06d}.pt"),
-                "wb",
-            ) as f:
-                th.save(self.opt.state_dict(), f)
-
-        dist.barrier()
+        opt_path = os.path.join(self.save_dir, self.timestamp)
+        os.makedirs(opt_path, exist_ok=True)  # Create directory if it doesn't exist
+        with bf.BlobFile(
+            bf.join(opt_path, f"opt{(self.step+self.resume_step):06d}.pt"),
+            "wb",
+        ) as f:
+            th.save(self.opt.state_dict(), f)
 
 
 def parse_resume_step_from_filename(filename):

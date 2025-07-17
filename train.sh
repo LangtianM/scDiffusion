@@ -4,8 +4,8 @@ echo "Training Autoencoder done"
 
 cd ..
 echo "Training diffusion backbone"
-python cell_train.py --data_dir '/stor/lep/diffusion/multiome/openproblems_RNA_new.h5ad' --vae_path 'output/checkpoint/AE/open_problem/model_seed=0_step=150000.pt' \
-    --model_name 'open_problem' --lr_anneal_steps 800000 --save_dir 'output/checkpoint/backbone'
+python cell_train.py --data_dir 'data/tabula_muris/all.h5ad' --vae_path 'output/checkpoint/AE/my_VAE/model_seed=0_step=2999.pt' \
+    --model_name 'my_diffusion' --lr_anneal_steps 800000 --save_dir 'output/checkpoint/backbone'
 echo "Training diffusion backbone done"
 
 echo "Training classifier"

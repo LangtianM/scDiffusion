@@ -216,7 +216,7 @@ class VAE(torch.nn.Module):
     def __init__(
         self,
         num_genes,
-        device="cuda",
+        device=None,
         seed=0,
         loss_ae="gauss",
         decoder_activation="linear",
@@ -225,6 +225,14 @@ class VAE(torch.nn.Module):
         super(VAE, self).__init__()
         # set generic attributes
         self.num_genes = num_genes
+        # Automatically detect device, prioritizing MPS on Apple Silicon
+        if device is None:
+            if torch.backends.mps.is_available():
+                device = "mps"
+            elif torch.cuda.is_available():
+                device = "cuda"
+            else:
+                device = "cpu"
         self.device = device
         self.seed = seed
         self.loss_ae = loss_ae

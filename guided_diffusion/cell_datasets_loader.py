@@ -24,15 +24,23 @@ def stabilize(expression_matrix):
     return np.log(expression_matrix + 1. / (2 * phi_hat[0]))
 
 def load_VAE(vae_path, num_gene, hidden_dim):
+    # Automatically detect device, prioritizing MPS on Apple Silicon
+    if torch.backends.mps.is_available():
+        device = "mps"
+    elif torch.cuda.is_available():
+        device = "cuda"
+    else:
+        device = "cpu"
+    
     autoencoder = VAE(
         num_genes=num_gene,
-        device='cuda',
+        device=device,
         seed=0,
         loss_ae='mse',
         hidden_dim=hidden_dim,
         decoder_activation='ReLU',
     )
-    autoencoder.load_state_dict(torch.load(vae_path))
+    autoencoder.load_state_dict(torch.load(vae_path, map_location=device))
     return autoencoder
 
 
@@ -81,10 +89,13 @@ def load_data(
     cell_data = adata.X.toarray()
 
     # turn the gene expression into latent space. use this if training the diffusion backbone.
+    # Why an VAE, instead of SCimilarity described in the paper?
     if not train_vae:
         num_gene = cell_data.shape[1]
         autoencoder = load_VAE(vae_path,num_gene,hidden_dim)
-        cell_data = autoencoder(torch.tensor(cell_data).cuda(),return_latent=True)
+        # Use the same device as the autoencoder
+        device = autoencoder.device
+        cell_data = autoencoder(torch.tensor(cell_data).to(device), return_latent=True)
         cell_data = cell_data.cpu().detach().numpy()
     
     dataset = CellDataset(
