@@ -21,7 +21,13 @@ def setup_dist():
     """
     Setup a distributed process group.
     """
-    if dist.is_initialized():
+    # Check if distributed is available
+    if not dist.is_available():
+        print("Warning: PyTorch distributed is not available. Running in single-process mode.")
+        return
+    
+    # Check if distributed is already initialized (for newer PyTorch versions)
+    if hasattr(dist, 'is_initialized') and dist.is_initialized():
         return
     
     # For single device training, we don't need to initialize distributed

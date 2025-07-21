@@ -6,13 +6,15 @@ echo "Training Autoencoder done"
 
 cd ..
 echo "Training diffusion backbone"
-# Add memory optimization parameters for diffusion model training
-python cell_train.py --data_dir 'data/tabula_muris/all.h5ad' --vae_path 'output/checkpoint/AE/my_VAE/model_seed=0_step=2999.pt' \
-    --model_name 'my_diffusion' --lr_anneal_steps 800000 --save_dir 'output/checkpoint/backbone' \
-    --microbatch 16
+# Add memory optimization parameters for diffusion model trainin
+export PYTORCH_ENABLE_MPS_FALLBACK=1 && python cell_train.py --data_dir 'data/tabula_muris/all.h5ad' --vae_path 'output/checkpoint/AE/my_VAE/model_seed=0_step=2999.pt' --model_name 'my_diffusion' --lr_anneal_steps 100000 --save_dir 'output/checkpoint/backbone' --microbatch 16
 echo "Training diffusion backbone done"
 
 echo "Training classifier"
-python classifier_train.py --data_dir '/stor/lep/diffusion/multiome/openproblems_RNA_new.h5ad' --model_path "output/checkpoint/classifier/open_problem_classifier" \
-    --iterations 400000 --vae_path 'checkpoint/AE/open_problem/model_seed=0_step=150000.pt' --num_class 22
+python classifier_train.py --data_dir 'data/tabula_muris/all.h5ad' --model_path "output/checkpoint/classifier/open_problem_classifier" \
+    --iterations 400000 --vae_path 'output/checkpoint/AE/my_VAE/model_seed=0_step=2999.pt' --num_class 22
 echo "Training classifier, done"
+
+# Generate samples
+python cell_sample.py --model_path 'output/checkpoint/backbone/my_diffusion/model100000.pt' --sample_dir 'output/simulated_samples/muris' --num_samples 3000 --batch_size 1000
+

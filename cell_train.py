@@ -30,7 +30,9 @@ def main():
     model, diffusion = create_model_and_diffusion(
         **args_to_dict(args, model_and_diffusion_defaults().keys())
     )
-    model.to(dist_util.dev())
+    device = dist_util.dev()
+    logger.log(f"Using device: {device}")
+    model.to(device)
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion)
 
     logger.log("creating data loader...")

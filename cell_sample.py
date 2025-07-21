@@ -3,6 +3,7 @@ Generate a large batch of image samples from a model and save them as a large
 numpy array. This can be used to produce samples for FID evaluation.
 """
 import argparse
+import os
 
 import numpy as np
 import torch as th
@@ -28,7 +29,7 @@ def main():
     setup_seed(1234)
     args = create_argparser().parse_args()
 
-    dist_util.setup_dist()
+    # dist_util.setup_dist()
     logger.configure(dir='output/checkpoint/sample_logs')
 
     logger.log("creating model and diffusion...")
@@ -56,15 +57,24 @@ def main():
             start_time=diffusion.betas.shape[0],
         )
 
-        gathered_samples = [th.zeros_like(sample) for _ in range(dist.get_world_size())]
-        dist.all_gather(gathered_samples, sample)  # gather not supported with NCCL
-        all_cells.extend([sample.cpu().numpy() for sample in gathered_samples])
+        # Handle both distributed and non-distributed cases
+        # if dist.is_initialized():
+        #     gathered_samples = [th.zeros_like(sample) for _ in range(dist.get_world_size())]
+        #     dist.all_gather(gathered_samples, sample)  # gather not supported with NCCL
+        #     all_cells.extend([sample.cpu().numpy() for sample in gathered_samples])
+        # else:
+        all_cells.append(sample.cpu().numpy())
+            
         logger.log(f"created {len(all_cells) * args.batch_size} samples")
 
     arr = np.concatenate(all_cells, axis=0)
+    # if sample_dir not exist, create it
+    if not os.path.exists(args.sample_dir):
+        os.makedirs(args.sample_dir)
     save_data(arr, traj, args.sample_dir)
 
-    dist.barrier()
+    # if dist.is_initialized():
+    #     dist.barrier()
     logger.log("sampling complete")
 
 
